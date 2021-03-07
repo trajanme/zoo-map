@@ -1,4 +1,4 @@
-const animals = [
+var animals = [
   {
     name: 'アフリカゾウ',
     type: '長鼻目ゾウ科アフリカゾウ属',
@@ -14,11 +14,20 @@ const animals = [
     weight: 11,
   }
 ]
+var zooName = '八木山動物公園'
 
 var vm = new Vue ({
   el: '#app',
   data: {
+    zooName: zooName,
     animals: animals
+  },
+  computed: {
+    totalQuantity: function() {
+      return this.animals.reduce(function(sum, animal) {
+        return sum + animal.quantity
+      }, 0)
+    }
   },
   filters: {
     numberWithDelimiter: function(value) {
