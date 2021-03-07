@@ -27,7 +27,10 @@ var vm = new Vue ({
       return this.animals.reduce(function(sum, animal) {
         return sum + animal.quantity
       }, 0)
-    }
+    },
+    over50Animals: function() {
+      return this.totalQuantity > 50
+    },
   },
   filters: {
     numberWithDelimiter: function(value) {
