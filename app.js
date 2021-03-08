@@ -28,6 +28,12 @@ var vm = new Vue ({
         return sum + animal.quantity
       }, 0)
     },
+    errorMessageStyle: function () {
+      return {
+        border: this.over50Animals ? '1px solid red' : '',
+        color: this.over50Animals ? 'red' : ''
+      }
+    },
     over50Animals: function() {
       return this.totalQuantity > 50
     },

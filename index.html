@@ -9,7 +9,7 @@
 </head>
 <body>
   <div id="app">
-    <p>{{ zooName }}には、{{ totalQuantity }}匹の動物がいます。<span v-show="over50Animals">とても多いですね。</span></p>
+    <p>{{ zooName }}には、{{ totalQuantity }}匹の動物がいます。<span v-bind:style="errorMessageStyle">とても多いですね。</span></p>
     <p>{{ animals[0].name }} : {{ animals[0].quantity }}匹 (1匹あたり {{ animals[0].weight | numberWithDelimiter }}kg)</p>
   </div>
 
