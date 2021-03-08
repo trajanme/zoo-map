@@ -12,7 +12,21 @@ var animals = [
     english: 'Japanese Macaque',
     quantity: 30,
     weight: 11,
-  }
+  },
+  {
+    name: 'レッサーパンダ',
+    type: '哺乳綱食肉目レッサーパンダ科レッサーパンダ属',
+    english: 'Red Panda',
+    quantity: 5,
+    weight: 5,
+  },
+  {
+    name: 'スマトラトラ',
+    type: '哺乳綱ネコ目ネコ科ヒョウ属',
+    english: 'Sumatran Tiger',
+    quantity: 1,
+    weight: 120,
+  },
 ]
 var zooName = '八木山動物公園'
 
