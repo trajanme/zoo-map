@@ -25,7 +25,7 @@ var vm = new Vue ({
   computed: {
     totalQuantity: function() {
       return this.animals.reduce(function(sum, animal) {
-        return sum + animal.quantity
+        return Number(sum) + Number(animal.quantity)
       }, 0)
     },
     errorMessageStyle: function () {
