@@ -18,9 +18,18 @@
       </li>
     </ul>
     <p>いやいや、{{ animals[1].name }}は<input type="number" v-model="animals[1].quantity" min="0">匹いましたよ！</p>
+    <ul id="example">
+      <list-item></list-item>
+    </ul>
   </div>
 
   <!-- script -->
   <script src="app.js"></script>
+  <script>
+    Vue.component('list-item', {
+      template: '<li>foo</li>'
+    })
+    new Vue({ el: '#example'})
+  </script>
 </body>
 </html>
