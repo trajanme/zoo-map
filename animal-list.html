@@ -4,6 +4,7 @@
   <animal-list-title></animal-list-title>
   <animal-list-description></animal-list-description>
   <animal-list-cards></animal-list-cards>
+  <animal-list-cards></animal-list-cards>
 </div>
 
 <script>
@@ -15,8 +16,12 @@
     template: '<p>仙台市八木山動物公園の動物の一覧です。</p>'
   })
 
+  Vue.component('animal-list-card', {
+    template: '<div><li>アフリカゾウ</li><li>ニホンザル</li><li>アビシニアコロブス</li></div>'
+  })
+
   Vue.component('animal-list-cards', {
-    template: '<ul><li>アフリカゾウ</li><li>ニホンザル</li><li>アビシニアコロブス</li></ul>'
+    template: '<ul><animal-list-card></animal-list-card></ul>'
   })
 
   new Vue({
