@@ -52,6 +52,11 @@ var vm = new Vue ({
       return this.totalQuantity > 50
     },
   },
+  methods: {
+    checkAnswer: function () {
+      animals[1].quantity = 30
+    }
+  },
   filters: {
     numberWithDelimiter: function(value) {
       if (!value) {
