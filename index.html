@@ -27,7 +27,12 @@
   <script src="app.js"></script>
   <script>
     Vue.component('list-item', {
-      template: '<li>foo</li>'
+      template: '<li>foo {{ message }}</li>',
+      data: function () {
+          return {
+            message: 'bar'
+          }
+      }
     })
     new Vue({ el: '#example'})
   </script>
