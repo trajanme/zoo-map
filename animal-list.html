@@ -3,6 +3,7 @@
 <div id="animal-list">
   <animal-list-title></animal-list-title>
   <animal-list-description></animal-list-description>
+  <input-date-with-today></input-date-with-today>
   <animal-list-cards></animal-list-cards>
 </div>
 
@@ -13,6 +14,17 @@
 <script>
   Vue.component('animal-list-title', {
     template: '#animal-list-title'
+  })
+
+  Vue.component('input-date-with-today', {
+    render: function (createElement) {
+      return createElement('input', {
+        attrs: {
+          type: 'date',
+          value: new Date().toISOString().substring(0, 10)
+        }
+      })
+    }
   })
 
   new Vue({
