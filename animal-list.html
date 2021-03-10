@@ -6,13 +6,18 @@
   <animal-list-cards></animal-list-cards>
 </div>
 
+<script type="text/x-template" id="animal-list-title">
+  <h1>動物一覧</h1>
+</script>
+
 <script>
+  Vue.component('animal-list-title', {
+    template: '#animal-list-title'
+  })
+
   new Vue({
     el: '#animal-list',
     components: {
-      'animal-list-title': {
-        template: '<h1>動物一覧</h1>'
-      },
       'animal-list-description': {
         template: '<p>仙台市八木山動物公園の動物の一覧です。</p>'
       },
