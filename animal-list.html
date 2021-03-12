@@ -1,0 +1,122 @@
+<script src="https://unpkg.com/vue@2.5.17"></script>
+
+<div id="animal-list">
+  <animal-list-header class="header">
+    <h1 slot="header">動物一覧</h1>
+  </animal-list-header>
+  <animal-list-content class="content">
+    <ul slot="content">
+      <animal-list-card v-for="animal in animals" :animal="animal"></animal-list-card>
+    </ul>
+  </animal-list-content>
+
+  <animal-list-description></animal-list-description>
+  <input-date-with-today></input-date-with-today>
+  <animal-counter-button v-on:increment="incrementZooStatus()"></animal-counter-button>
+</div>
+
+<style>
+  @import "main.css";
+</style>
+
+<script>
+  var headerTemplate = `
+  <div>
+    <slot name="header">No Header</slot>
+  </div>
+  `
+
+  var contentTemplate = `
+  <div>
+    <slot name="content">No Contents</slot>
+  </div>
+  `
+
+  Vue.component('animal-list-header', {
+    template: headerTemplate
+  })
+
+  Vue.component('animal-list-content', {
+    template: contentTemplate
+  })
+
+  Vue.component('animal-list-card', {
+    props: {
+      animal: Object
+    },
+    template: '<li>{{ animal.name }}</li>'
+  })
+
+  Vue.component('animal-counter-button', {
+    template: '<span>{{ counter }}匹<button v-on:click="addToZoo">追加</button></span>',
+    data: function () {
+      return {
+        counter: 0
+      }
+    },
+    methods: {
+      addToZoo: function () {
+        this.counter += 1
+        this.$emit('increment')
+      }
+    }
+  })
+
+  Vue.component('input-date-with-today', {
+    render: function (createElement) {
+      return createElement('input', {
+        attrs: {
+          type: 'date',
+          value: new Date().toISOString().substring(0, 10)
+        }
+      })
+    }
+  })
+
+  new Vue({
+    el: '#animal-list',
+    data: {
+      total: 0,
+      animals: [
+        {
+          name: 'アフリカゾウ',
+          type: '長鼻目ゾウ科アフリカゾウ属',
+          english: 'African Elephant',
+          quantity: 3,
+          weight: 6000,
+        },
+        {
+          name: 'ニホンザル',
+          type: '哺乳綱霊長目オナガザル科マカク属',
+          english: 'Japanese Macaque',
+          quantity: 30,
+          weight: 11,
+        },
+        {
+          name: 'レッサーパンダ',
+          type: '哺乳綱食肉目レッサーパンダ科レッサーパンダ属',
+          english: 'Red Panda',
+          quantity: 5,
+          weight: 5,
+        },
+        {
+          name: 'スマトラトラ',
+          type: '哺乳綱ネコ目ネコ科ヒョウ属',
+          english: 'Sumatran Tiger',
+          quantity: 1,
+          weight: 120,
+        },
+      ]
+    },
+    components: {
+      'animal-list-description': {
+        template: '<p>仙台市八木山動物公園の動物の一覧です。</p>'
+      },
+    },
+    methods: {
+      incrementZooStatus: function () {
+        this.total += 1
+      }
+    }
+  })
+</script>
