@@ -5,7 +5,7 @@
   <animal-list-title></animal-list-title>
   <animal-list-description></animal-list-description>
   <input-date-with-today></input-date-with-today>
-  <animal-list-cards></animal-list-cards>
+  <ol><animal-list-card v-for="animal in animals" :animal="animal"></animal-list-card></ol>
 </div>
 
 <script type="text/x-template" id="animal-list-title">
@@ -37,17 +37,41 @@
 
   new Vue({
     el: '#animal-list',
+    data: {
+      animals: [
+        {
+          name: 'アフリカゾウ',
+          type: '長鼻目ゾウ科アフリカゾウ属',
+          english: 'African Elephant',
+          quantity: 3,
+          weight: 6000,
+        },
+        {
+          name: 'ニホンザル',
+          type: '哺乳綱霊長目オナガザル科マカク属',
+          english: 'Japanese Macaque',
+          quantity: 30,
+          weight: 11,
+        },
+        {
+          name: 'レッサーパンダ',
+          type: '哺乳綱食肉目レッサーパンダ科レッサーパンダ属',
+          english: 'Red Panda',
+          quantity: 5,
+          weight: 5,
+        },
+        {
+          name: 'スマトラトラ',
+          type: '哺乳綱ネコ目ネコ科ヒョウ属',
+          english: 'Sumatran Tiger',
+          quantity: 1,
+          weight: 120,
+        },
+      ]
+    },
     components: {
       'animal-list-description': {
         template: '<p>仙台市八木山動物公園の動物の一覧です。</p>'
-      },
-      'animal-list-cards': {
-        data: function () {
-          return {
-            animals: animals
-          }
-        },
-        template: '<ul><div v-for="animal in animals"><animal-list-card :animal="animal" ></animal-list-card></div></ul>'
       },
     }
   })
