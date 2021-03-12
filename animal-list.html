@@ -6,6 +6,7 @@
   <animal-list-description></animal-list-description>
   <input-date-with-today></input-date-with-today>
   <ol><animal-list-card v-for="animal in animals" :animal="animal"></animal-list-card></ol>
+  <animal-counter-button v-on:increment="incrementZooStatus()"></animal-counter-button>
 </div>
 
 <script type="text/x-template" id="animal-list-title">
@@ -24,6 +25,21 @@
     template: '<li>{{ animal.name }}</li>'
   })
 
+  Vue.component('animal-counter-button', {
+    template: '<span>{{ counter }}匹<button v-on:click="addToZoo">追加</button></span>',
+    data: function () {
+      return {
+        counter: 0
+      }
+    },
+    methods: {
+      addToZoo: function () {
+        this.counter += 1
+        this.$emit('increment')
+      }
+    }
+  })
+
   Vue.component('input-date-with-today', {
     render: function (createElement) {
       return createElement('input', {
@@ -38,6 +54,7 @@
   new Vue({
     el: '#animal-list',
     data: {
+      total: 0,
       animals: [
         {
           name: 'アフリカゾウ',
@@ -73,6 +90,11 @@
       'animal-list-description': {
         template: '<p>仙台市八木山動物公園の動物の一覧です。</p>'
       },
+    },
+    methods: {
+      incrementZooStatus: function () {
+        this.total += 1
+      }
     }
   })
 </script>
