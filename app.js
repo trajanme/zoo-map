@@ -30,41 +30,41 @@ var animals = [
 ]
 var zooName = '八木山動物公園'
 
-var vm = new Vue ({
-  el: '#app',
-  data: {
-    zooName: zooName,
-    animals: animals
-  },
-  computed: {
-    totalQuantity: function() {
-      return this.animals.reduce(function(sum, animal) {
-        return Number(sum) + Number(animal.quantity)
-      }, 0)
-    },
-    errorMessageStyle: function () {
-      return {
-        border: this.over50Animals ? '1px solid red' : '',
-        color: this.over50Animals ? 'red' : ''
-      }
-    },
-    over50Animals: function() {
-      return this.totalQuantity > 50
-    },
-  },
-  methods: {
-    checkAnswer: function () {
-      animals[1].quantity = 30
-    }
-  },
-  filters: {
-    numberWithDelimiter: function(value) {
-      if (!value) {
-        return '0'
-      }
-      return value.toString().replace(/(\d)(?=(\d{3})+$)/g, '$1,')
-    }
-  }
-})
-
-window.vm = vm
+// var vm = new Vue ({
+//   el: '#app',
+//   data: {
+//     zooName: zooName,
+//     animals: animals
+//   },
+//   computed: {
+//     totalQuantity: function() {
+//       return this.animals.reduce(function(sum, animal) {
+//         return Number(sum) + Number(animal.quantity)
+//       }, 0)
+//     },
+//     errorMessageStyle: function () {
+//       return {
+//         border: this.over50Animals ? '1px solid red' : '',
+//         color: this.over50Animals ? 'red' : ''
+//       }
+//     },
+//     over50Animals: function() {
+//       return this.totalQuantity > 50
+//     },
+//   },
+//   methods: {
+//     checkAnswer: function () {
+//       animals[1].quantity = 30
+//     }
+//   },
+//   filters: {
+//     numberWithDelimiter: function(value) {
+//       if (!value) {
+//         return '0'
+//       }
+//       return value.toString().replace(/(\d)(?=(\d{3})+$)/g, '$1,')
+//     }
+//   }
+// })
+// 
+// window.vm = vm

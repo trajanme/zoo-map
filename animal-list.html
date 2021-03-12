@@ -1,4 +1,5 @@
 <script src="https://unpkg.com/vue@2.5.17"></script>
+<script src="app.js"></script>
 
 <div id="animal-list">
   <animal-list-title></animal-list-title>
@@ -14,6 +15,13 @@
 <script>
   Vue.component('animal-list-title', {
     template: '#animal-list-title'
+  })
+
+  Vue.component('animal-list-card', {
+    props: {
+      animal: Object
+    },
+    template: '<li>{{ animal.name }}</li>'
   })
 
   Vue.component('input-date-with-today', {
@@ -34,7 +42,12 @@
         template: '<p>仙台市八木山動物公園の動物の一覧です。</p>'
       },
       'animal-list-cards': {
-        template: '<ul><li>アフリカゾウ</li><li>ニホンザル</li><li>アビシニアコロブス</li></ul>'
+        data: function () {
+          return {
+            animals: animals
+          }
+        },
+        template: '<ul><div v-for="animal in animals"><animal-list-card :animal="animal" ></animal-list-card></div></ul>'
       },
     }
   })
