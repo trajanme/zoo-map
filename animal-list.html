@@ -1,21 +1,43 @@
 <script src="https://unpkg.com/vue@2.5.17"></script>
-<script src="app.js"></script>
 
 <div id="animal-list">
-  <animal-list-title></animal-list-title>
+  <animal-list-header class="header">
+    <h1 slot="header">動物一覧</h1>
+  </animal-list-header>
+  <animal-list-content class="content">
+    <ul slot="content">
+      <animal-list-card v-for="animal in animals" :animal="animal"></animal-list-card>
+    </ul>
+  </animal-list-content>
+
   <animal-list-description></animal-list-description>
   <input-date-with-today></input-date-with-today>
-  <ol><animal-list-card v-for="animal in animals" :animal="animal"></animal-list-card></ol>
   <animal-counter-button v-on:increment="incrementZooStatus()"></animal-counter-button>
 </div>
 
-<script type="text/x-template" id="animal-list-title">
-  <h1>動物一覧</h1>
-</script>
+<style>
+  @import "main.css";
+</style>
 
 <script>
-  Vue.component('animal-list-title', {
-    template: '#animal-list-title'
+  var headerTemplate = `
+  <div>
+    <slot name="header">No Header</slot>
+  </div>
+  `
+
+  var contentTemplate = `
+  <div>
+    <slot name="content">No Contents</slot>
+  </div>
+  `
+
+  Vue.component('animal-list-header', {
+    template: headerTemplate
+  })
+
+  Vue.component('animal-list-content', {
+    template: contentTemplate
   })
 
   Vue.component('animal-list-card', {
