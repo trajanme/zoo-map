@@ -12,11 +12,18 @@
   <div id="app">
     <router-link to="/">TOP</router-link>
     <router-link to="/animals">動物一覧</router-link>
-    <router-link :to="{ name: 'animal', params: { animalId: 123 }}">動物詳細</router-link>
     <router-view></router-view>
   </div>
 
+  <script type="text/x-template" id="animal-list">
+    <div>動物の一覧ページです。</div>
+  </script>
+
   <script>
+  var animalList = {
+    template: '#animal-list'
+  }
+
   var router = new VueRouter({
     routes: [
       {
@@ -27,16 +34,7 @@
       },
       {
         path: '/animals',
-        component: {
-          template: '<div>動物一覧ページです。</div>'
-        }
-      },
-      {
-        path: '/animals/:animalId',
-        name: 'animal',
-        component: {
-          template: '<div>動物IDは{{ $route.params.animalId }}です。</div>'
-        }
+        component: animalList
       }
     ]
   })
