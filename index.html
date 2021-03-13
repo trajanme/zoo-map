@@ -9,33 +9,10 @@
 </head>
 <body>
   <div id="app">
-    <p>{{ zooName }}には、{{ totalQuantity }}匹の動物がいます。
-      <span v-show="over50Animals" v-bind:style="errorMessageStyle">とても多いですね。</span>
-    </p>
-    <ul>
-      <li v-for="animal in animals">
-        {{ animal.name }} : {{ animal.quantity }}匹 (1匹あたり {{ animal.weight | numberWithDelimiter }}kg)
-      </li>
-    </ul>
-    <p>いやいや、{{ animals[1].name }}は<input type="number" v-model="animals[1].quantity" min="0">匹いましたよ！</p>
-    <button v-on:click="checkAnswer">正解は...</button>
-    <ul id="example">
-      <list-item></list-item>
-    </ul>
   </div>
 
-  <!-- script -->
-  <script src="app.js"></script>
   <script>
-    Vue.component('list-item', {
-      template: '<li>foo {{ message }}</li>',
-      data: function () {
-          return {
-            message: 'bar'
-          }
-      }
-    })
-    new Vue({ el: '#example'})
+    
   </script>
 </body>
 </html>
