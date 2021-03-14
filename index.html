@@ -16,12 +16,59 @@
   </div>
 
   <script type="text/x-template" id="animal-list">
-    <div>動物の一覧ページです。</div>
+    <div>
+      <div class="loading" v-if="loading">読込中...</div>
+      <div class="error" v-if="error">{{ error }}</div>
+      <div v-for="animal in animals" :key="animal.id">
+        <h2>{{ animal.name }}</h2>
+      </div>
+    </div>
   </script>
 
   <script>
+  var getAnimals = function (callback) {
+    setTimeout(function () {
+      callback(null, [
+        {
+          id: 1,
+          name: 'ニホンザル'
+        },
+        {
+          id: 2,
+          name: 'アフリカゾウ'
+        }
+      ])
+    }, 1000)
+  }
+
   var animalList = {
-    template: '#animal-list'
+    template: '#animal-list',
+    data: function () {
+      return {
+        loading: false,
+        animals: function () { return [] },
+        error: null
+      }
+    },
+    created: function () {
+      this.fetchData()
+    },
+    watch: {
+      '$route': 'fetchData'
+    },
+    methods: {
+      fetchData: function () {
+        this.loading = true
+        getAnimals((function (err, animals) {
+          this.loading = false
+          if (err) {
+            this.error = err.toString()
+          } else {
+            this.animals = animals
+          }
+        }).bind(this))
+      }
+    }
   }
 
   var router = new VueRouter({
