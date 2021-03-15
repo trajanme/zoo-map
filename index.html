@@ -20,24 +20,48 @@
       <div class="loading" v-if="loading">読込中...</div>
       <div class="error" v-if="error">{{ error }}</div>
       <div v-for="animal in animals" :key="animal.id">
+        <router-link :to="{ path: '/animals/' + animal.id }">{{ animal.name }}</router-link>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="animal-detail">
+    <div>
+      <div class="loading" v-if="loading">読込中...</div>
+      <div class="error" v-if="error">{{ error }}</div>
+      <div v-if="animal">
         <h2>{{ animal.name }}</h2>
+        <p>{{ animal.description }}</p>
       </div>
     </div>
   </script>
 
   <script>
+  var animalData = [
+    {
+      id: 1,
+      name: 'ニホンザル',
+      description: 'ウキッ...!!'
+    },
+    {
+      id: 2,
+      name: 'アフリカゾウ',
+      description: 'ぱおーん。'
+    }
+  ]
+
   var getAnimals = function (callback) {
     setTimeout(function () {
-      callback(null, [
-        {
-          id: 1,
-          name: 'ニホンザル'
-        },
-        {
-          id: 2,
-          name: 'アフリカゾウ'
-        }
-      ])
+      callback(null, animalData)
+    }, 1000)
+  }
+
+  var getAnimal = function (animalId, callback) {
+    setTimeout(function () {
+      var filteredAnimals = animalData.filter(function (animal) {
+        return animal.id === parseInt(animalId, 10)
+      })
+      callback(null, filteredAnimals && filteredAnimals[0])
     }, 1000)
   }
 
@@ -71,6 +95,36 @@
     }
   }
 
+  var animalDetail = {
+    template: '#animal-detail',
+    data: function () {
+      return {
+        loading: false,
+        animal: null,
+        error: null
+      }
+    },
+    created: function () {
+      this.fetchData()
+    },
+    watch: {
+      '$route': 'fetchData'
+    },
+    methods: {
+      fetchData: function () {
+        this.loading = true
+        getAnimal(this.$route.params.animalId, (function (err, animal) {
+          this.loading = false
+          if (err) {
+            this.error = err.toString()
+          } else {
+            this.animal = animal
+          }
+        }).bind(this))
+      }
+    }
+  }
+
   var router = new VueRouter({
     routes: [
       {
@@ -82,6 +136,10 @@
       {
         path: '/animals',
         component: animalList
+      },
+      {
+        path: '/animals/:animalId',
+        component: animalDetail
       }
     ]
   })
