@@ -25,6 +25,27 @@
     </div>
   </script>
 
+  <script type="text/x-template" id="animal-create">
+    <div>
+      <div class="sending" v-if="sending">送信中...</div>
+      <div>
+        <h2>新規動物登録</h2>
+        <div>
+          <label>名前：</label>
+          <input type="text" v-model="animal.name">
+        </div>
+        <div>
+          <label>説明：</label>
+          <textarea type="text" v-model="animal.description"></textarea>
+        </div>
+        <div class="error" v-if="error">{{ error }}</div>
+        <div>
+          <input type="button" @click="createAnimal" value="送信">
+        </div>
+      </div>
+    </div>
+  </script>
+
   <script type="text/x-template" id="animal-detail">
     <div>
       <div class="loading" v-if="loading">読込中...</div>
@@ -63,6 +84,55 @@
       })
       callback(null, filteredAnimals && filteredAnimals[0])
     }, 1000)
+  }
+
+  var postAnimal = function (params, callback) {
+    setTimeout(function () {
+      params.id = animalData.length + 1
+      animalData.push(params)
+      callback(null, params)
+    }, 1000)
+  }
+
+  var animalCreate = {
+    template: '#animal-create',
+    data: function () {
+      return {
+        sending: false,
+        animal: this.defaultAnimal(),
+        error: null
+      }
+    },
+    created: function () {
+    },
+    methods: {
+      defaultAnimal: function () {
+        return {
+          name: '',
+          description: ''
+        }
+      },
+      createAnimal: function () {
+        if (this.animal.name.trim() === '') {
+          this.error = '名前は必須です'
+          return
+        }
+        if (this.animal.description.trim() === '') {
+          this.error = '説明は必須です'
+        }
+        postAnimal(this.animal, (function (err, user) {
+          this.sending = false
+          if (err) {
+            this.error = err.toString()
+          } else {
+            this.error = null
+            this.animal = this.defaultAnimal()
+            alert('新規動物が登録されました')
+            this.$router.push('/animals')
+          }
+        }).bind(this))
+      }
+    }
   }
 
   var animalList = {
@@ -136,6 +206,10 @@
       {
         path: '/animals',
         component: animalList
+      },
+      {
+        path: '/animals/new',
+        component: animalCreate
       },
       {
         path: '/animals/:animalId',
