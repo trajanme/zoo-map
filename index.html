@@ -12,8 +12,24 @@
   <div id="app">
     <router-link to="/">TOP</router-link>
     <router-link to="/animals">動物一覧</router-link>
+    <router-link to="/animals/new?redirect=true">新規動物登録</router-link>
+    <router-link to="/login" v-show="!auth.loggedIn()">ログイン</router-link>
+    <router-link to="/logout" v-show="auth.loggedIn()">ログアウト</router-link>
     <router-view></router-view>
   </div>
+
+  <script type="text/x-template" id="login">
+    <div>
+      <h2>Login</h2>
+      <p v-if="$route.query.redirect">ログインしてください。</p>
+      <form @submit.prevent="login">
+        <label><input v-model="email" placeholder="e-mail"></label>
+        <label><input v-model="pass" placeholder="password" type="password"></label><br>
+        <button type="submit">ログイン</button>
+        <p v-if="error" class="error">ログインに失敗しました。</p>
+      </form>
+    </div>
+  </script>
 
   <script type="text/x-template" id="animal-list">
     <div>
@@ -76,6 +92,25 @@
     }
   ]
 
+  var auth = {
+    login: function (email, pass, cb) {
+      setTimeout(function () {
+        if (email === 'vue@example.com' && pass === 'vue') {
+          localStorage.token = Math.random().toString(36).substring(7)
+          if (cb) { cb(true) }
+        } else {
+          if (cb) { cb(false) }
+        }
+      }, 0)
+    },
+    logout: function () {
+      delete localStorage.token
+    },
+    loggedIn: function () {
+      return !!localStorage.token
+    }
+  }
+
   var getAnimals = function (callback) {
     setTimeout(function () {
       callback(null, animalData)
@@ -134,6 +169,28 @@
             this.animal = this.defaultAnimal()
             alert('新規動物が登録されました')
             this.$router.push('/animals')
+          }
+        }).bind(this))
+      }
+    }
+  }
+
+  var login = {
+    template: '#login',
+    data: function () {
+      return {
+        email: 'vue@example.com',
+        pass: '',
+        error: false
+      }
+    },
+    methods: {
+      login: function () {
+        auth.login(this.email, this.pass, (function (loggedIn) {
+          if (!loggedIn) {
+            this.error = true
+          } else {
+            this.$router.replace(this.$route.query.redirect || '/')
           }
         }).bind(this))
       }
@@ -214,16 +271,40 @@
       },
       {
         path: '/animals/new',
-        component: animalCreate
+        component: animalCreate,
+        beforeEnter: function (to, from, next) {
+          if (!auth.loggedIn()) {
+            next({
+              path: '/login',
+              query: { redirect: to.fullPath }
+            })
+          } else {
+            next()
+          }
+        }
       },
       {
         path: '/animals/:animalId',
         component: animalDetail
+      },
+      {
+        path: '/login',
+        component: login
+      },
+      {
+        path: '/logout',
+        beforeEnter: function (to, from, next) {
+          auth.logout()
+          next('/')
+        }
       }
     ]
   })
 
   var app = new Vue({
+    data: {
+      auth: auth
+    },
     router: router
   }).$mount('#app')
   </script>
