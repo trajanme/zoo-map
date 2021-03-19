@@ -16,7 +16,35 @@
     <router-link to="/login" v-show="!auth.loggedIn()">ログイン</router-link>
     <router-link to="/logout" v-show="auth.loggedIn()">ログアウト</router-link>
     <router-view></router-view>
+
+    <button @click="isShown = !isShown">表示切替</button>
+    <transition>
+      <p v-show="isShown">Hello, Vue.js!</p>
+    </transition>
   </div>
+
+  <style>
+    .v-enter-active,
+    .v-leave-active {
+      transition: opacity 500ms ease-out;
+    }
+
+    .v-enter {
+      opacity: 0;
+    }
+
+    .v-enter-to {
+      opacity: 1;
+    }
+
+    .v-leave {
+      opacity: 1;
+    }
+
+    .v-leave-to {
+      opacity: 0;
+    }
+  </style>
 
   <script type="text/x-template" id="login">
     <div>
@@ -303,7 +331,8 @@
 
   var app = new Vue({
     data: {
-      auth: auth
+      auth: auth,
+      isShown: false
     },
     router: router
   }).$mount('#app')
