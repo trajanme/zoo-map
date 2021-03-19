@@ -6,36 +6,307 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>zoo-map</title>
   <script src="https://unpkg.com/vue@2.5.17"></script>
+  <script src="https://unpkg.com/vue-router@3.0.1"></script>
 </head>
 <body>
   <div id="app">
-    <p>{{ zooName }}には、{{ totalQuantity }}匹の動物がいます。
-      <span v-show="over50Animals" v-bind:style="errorMessageStyle">とても多いですね。</span>
-    </p>
-    <ul>
-      <li v-for="animal in animals">
-        {{ animal.name }} : {{ animal.quantity }}匹 (1匹あたり {{ animal.weight | numberWithDelimiter }}kg)
-      </li>
-    </ul>
-    <p>いやいや、{{ animals[1].name }}は<input type="number" v-model="animals[1].quantity" min="0">匹いましたよ！</p>
-    <button v-on:click="checkAnswer">正解は...</button>
-    <ul id="example">
-      <list-item></list-item>
-    </ul>
+    <router-link to="/">TOP</router-link>
+    <router-link to="/animals">動物一覧</router-link>
+    <router-link to="/animals/new?redirect=true">新規動物登録</router-link>
+    <router-link to="/login" v-show="!auth.loggedIn()">ログイン</router-link>
+    <router-link to="/logout" v-show="auth.loggedIn()">ログアウト</router-link>
+    <router-view></router-view>
   </div>
 
-  <!-- script -->
-  <script src="app.js"></script>
+  <script type="text/x-template" id="login">
+    <div>
+      <h2>Login</h2>
+      <p v-if="$route.query.redirect">ログインしてください。</p>
+      <form @submit.prevent="login">
+        <label><input v-model="email" placeholder="e-mail"></label>
+        <label><input v-model="pass" placeholder="password" type="password"></label><br>
+        <button type="submit">ログイン</button>
+        <p v-if="error" class="error">ログインに失敗しました。</p>
+      </form>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="animal-list">
+    <div>
+      <div class="loading" v-if="loading">読込中...</div>
+      <div class="error" v-if="error">{{ error }}</div>
+      <div v-for="animal in animals" :key="animal.id">
+        <router-link :to="{ path: '/animals/' + animal.id }">{{ animal.name }}</router-link>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="animal-create">
+    <div>
+      <div class="sending" v-if="sending">送信中...</div>
+      <div>
+        <h2>新規動物登録</h2>
+        <div>
+          <label>名前：</label>
+          <input type="text" v-model="animal.name">
+        </div>
+        <div>
+          <label>説明：</label>
+          <textarea type="text" v-model="animal.description"></textarea>
+        </div>
+        <div class="error" v-if="error">{{ error }}</div>
+        <div>
+          <input type="button" @click="createAnimal" value="送信">
+        </div>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="animal-detail">
+    <div>
+      <div class="loading" v-if="loading">読込中...</div>
+      <div class="error" v-if="error">{{ error }}</div>
+      <div v-if="animal">
+        <h2>{{ animal.name }}</h2>
+        <p>{{ animal.description }}</p>
+      </div>
+    </div>
+  </script>
+
   <script>
-    Vue.component('list-item', {
-      template: '<li>foo {{ message }}</li>',
-      data: function () {
-          return {
-            message: 'bar'
-          }
+  var animalData = [
+    {
+      id: 1,
+      name: 'ニホンザル',
+      description: 'ウキッ...!!'
+    },
+    {
+      id: 2,
+      name: 'アフリカゾウ',
+      description: 'ぱおーん。'
+    },
+    {
+      id: 3,
+      name: 'レッサーパンダ',
+      description: '...!!'
+    }
+  ]
+
+  var auth = {
+    login: function (email, pass, cb) {
+      setTimeout(function () {
+        if (email === 'vue@example.com' && pass === 'vue') {
+          localStorage.token = Math.random().toString(36).substring(7)
+          if (cb) { cb(true) }
+        } else {
+          if (cb) { cb(false) }
+        }
+      }, 0)
+    },
+    logout: function () {
+      delete localStorage.token
+    },
+    loggedIn: function () {
+      return !!localStorage.token
+    }
+  }
+
+  var getAnimals = function (callback) {
+    setTimeout(function () {
+      callback(null, animalData)
+    }, 1000)
+  }
+
+  var getAnimal = function (animalId, callback) {
+    setTimeout(function () {
+      var filteredAnimals = animalData.filter(function (animal) {
+        return animal.id === parseInt(animalId, 10)
+      })
+      callback(null, filteredAnimals && filteredAnimals[0])
+    }, 1000)
+  }
+
+  var postAnimal = function (params, callback) {
+    setTimeout(function () {
+      params.id = animalData.length + 1
+      animalData.push(params)
+      callback(null, params)
+    }, 1000)
+  }
+
+  var animalCreate = {
+    template: '#animal-create',
+    data: function () {
+      return {
+        sending: false,
+        animal: this.defaultAnimal(),
+        error: null
       }
-    })
-    new Vue({ el: '#example'})
+    },
+    created: function () {
+    },
+    methods: {
+      defaultAnimal: function () {
+        return {
+          name: '',
+          description: ''
+        }
+      },
+      createAnimal: function () {
+        if (this.animal.name.trim() === '') {
+          this.error = '名前は必須です'
+          return
+        }
+        if (this.animal.description.trim() === '') {
+          this.error = '説明は必須です'
+        }
+        postAnimal(this.animal, (function (err, user) {
+          this.sending = false
+          if (err) {
+            this.error = err.toString()
+          } else {
+            this.error = null
+            this.animal = this.defaultAnimal()
+            alert('新規動物が登録されました')
+            this.$router.push('/animals')
+          }
+        }).bind(this))
+      }
+    }
+  }
+
+  var login = {
+    template: '#login',
+    data: function () {
+      return {
+        email: 'vue@example.com',
+        pass: '',
+        error: false
+      }
+    },
+    methods: {
+      login: function () {
+        auth.login(this.email, this.pass, (function (loggedIn) {
+          if (!loggedIn) {
+            this.error = true
+          } else {
+            this.$router.replace(this.$route.query.redirect || '/')
+          }
+        }).bind(this))
+      }
+    }
+  }
+
+  var animalList = {
+    template: '#animal-list',
+    data: function () {
+      return {
+        loading: false,
+        animals: function () { return [] },
+        error: null
+      }
+    },
+    created: function () {
+      this.fetchData()
+    },
+    watch: {
+      '$route': 'fetchData'
+    },
+    methods: {
+      fetchData: function () {
+        this.loading = true
+        getAnimals((function (err, animals) {
+          this.loading = false
+          if (err) {
+            this.error = err.toString()
+          } else {
+            this.animals = animals
+          }
+        }).bind(this))
+      }
+    }
+  }
+
+  var animalDetail = {
+    template: '#animal-detail',
+    data: function () {
+      return {
+        loading: false,
+        animal: null,
+        error: null
+      }
+    },
+    created: function () {
+      this.fetchData()
+    },
+    watch: {
+      '$route': 'fetchData'
+    },
+    methods: {
+      fetchData: function () {
+        this.loading = true
+        getAnimal(this.$route.params.animalId, (function (err, animal) {
+          this.loading = false
+          if (err) {
+            this.error = err.toString()
+          } else {
+            this.animal = animal
+          }
+        }).bind(this))
+      }
+    }
+  }
+
+  var router = new VueRouter({
+    routes: [
+      {
+        path: '/',
+        component: {
+          template: '<div>トップページです。</div>'
+        }
+      },
+      {
+        path: '/animals',
+        component: animalList
+      },
+      {
+        path: '/animals/new',
+        component: animalCreate,
+        beforeEnter: function (to, from, next) {
+          if (!auth.loggedIn()) {
+            next({
+              path: '/login',
+              query: { redirect: to.fullPath }
+            })
+          } else {
+            next()
+          }
+        }
+      },
+      {
+        path: '/animals/:animalId',
+        component: animalDetail
+      },
+      {
+        path: '/login',
+        component: login
+      },
+      {
+        path: '/logout',
+        beforeEnter: function (to, from, next) {
+          auth.logout()
+          next('/')
+        }
+      }
+    ]
+  })
+
+  var app = new Vue({
+    data: {
+      auth: auth
+    },
+    router: router
+  }).$mount('#app')
   </script>
 </body>
 </html>
