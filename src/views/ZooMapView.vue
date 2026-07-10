@@ -38,6 +38,48 @@ const activeAnimal = computed(() =>
   zoo.value?.animals.find((animal) => animal.id === activeAnimalId.value),
 )
 
+/**
+ * エリアのラベル表示位置と文字寄せを求める。
+ * 優先順: labelPos 指定 > ポリゴンの頂点座標平均 > 矩形の左上寄せ(従来どおり)
+ */
+function areaLabel(area) {
+  if (area.labelPos) {
+    return { x: area.labelPos.x, y: area.labelPos.y, anchor: 'middle' }
+  }
+  if (area.points && area.points.length) {
+    const sum = area.points.reduce(
+      (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+      { x: 0, y: 0 },
+    )
+    return {
+      x: sum.x / area.points.length,
+      y: sum.y / area.points.length,
+      anchor: 'middle',
+    }
+  }
+  // 既存の矩形エリアは後方互換のため左上寄せの位置を維持する
+  return { x: area.rect.x + 16, y: area.rect.y + 32, anchor: 'start' }
+}
+
+/** ポリゴン頂点配列を SVG の points 属性文字列に変換する */
+function areaPointsAttr(area) {
+  return area.points.map((p) => `${p.x},${p.y}`).join(' ')
+}
+
+const LABEL_LINE_HEIGHT = 28
+
+/** ラベルの行分割。labelLines が無ければ name をそのまま1行として扱う */
+function areaLabelLines(area) {
+  return area.labelLines && area.labelLines.length ? area.labelLines : [area.name]
+}
+
+/** 複数行ラベルの各行に対する dy (前の行からの相対オフセット) */
+function areaLabelLineDy(area, index) {
+  if (index !== 0) return LABEL_LINE_HEIGHT
+  const lineCount = areaLabelLines(area).length
+  return -((lineCount - 1) * LABEL_LINE_HEIGHT) / 2
+}
+
 onMounted(() => {
   if (activeAnimalId.value) {
     nextTick(() => {
@@ -126,18 +168,36 @@ const popupStyle = computed(() => {
         <rect x="0" y="0" width="1000" height="700" class="map-bg" />
 
         <g v-for="area in zoo.areas" :key="area.id">
+          <polygon
+            v-if="area.points"
+            :points="areaPointsAttr(area)"
+            :fill="area.color"
+            class="area-shape"
+            :class="{ 'area-shape--facility': area.facility }"
+          />
           <rect
+            v-else
             :x="area.rect.x"
             :y="area.rect.y"
             :width="area.rect.w"
             :height="area.rect.h"
             :fill="area.color"
-            class="area-rect"
+            class="area-shape"
+            :class="{ 'area-shape--facility': area.facility }"
             rx="14"
           />
-          <text :x="area.rect.x + 16" :y="area.rect.y + 32" class="area-label">
-            {{ area.name }}
-          </text>
+          <text
+            :x="areaLabel(area).x"
+            :y="areaLabel(area).y"
+            :text-anchor="areaLabel(area).anchor"
+            class="area-label"
+            :class="{ 'area-label--facility': area.facility }"
+          ><tspan
+            v-for="(line, i) in areaLabelLines(area)"
+            :key="i"
+            :x="areaLabel(area).x"
+            :dy="areaLabelLineDy(area, i)"
+          >{{ line }}</tspan></text>
         </g>
 
         <g v-for="animal in zoo.animals" :key="animal.id">
@@ -186,6 +246,10 @@ const popupStyle = computed(() => {
         {{ area.name }}
       </span>
     </div>
+
+    <p v-if="zoo.disclaimer" class="map-disclaimer">
+      <span aria-hidden="true">ⓘ</span> {{ zoo.disclaimer }}
+    </p>
   </section>
   <section v-else class="empty-state">
     <p>指定された動物園が見つかりませんでした。</p>
@@ -217,9 +281,14 @@ const popupStyle = computed(() => {
   fill: #eef3ea;
 }
 
-.area-rect {
+.area-shape {
   stroke: rgba(0, 0, 0, 0.08);
   stroke-width: 2;
+}
+
+.area-shape--facility {
+  stroke: rgba(0, 0, 0, 0.18);
+  stroke-dasharray: 6 5;
 }
 
 .area-label {
@@ -230,6 +299,12 @@ const popupStyle = computed(() => {
   stroke: #ffffff;
   stroke-width: 5px;
   stroke-linejoin: round;
+}
+
+.area-label--facility {
+  font-size: 22px;
+  font-weight: 600;
+  fill: #6b6b6b;
 }
 
 .pin-hit {
@@ -328,5 +403,17 @@ const popupStyle = computed(() => {
   border-radius: 3px;
   display: inline-block;
   border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.map-disclaimer {
+  max-width: 720px;
+  margin: 1rem auto 0;
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: #fff8e6;
+  border: 1px solid #f0dfa8;
+  color: #7a6415;
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 </style>

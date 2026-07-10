@@ -8,6 +8,9 @@ const props = defineProps({
 
 const zoo = computed(() => getZoo(props.zooId))
 
+// facility (動物のいない施設エリア) は絞り込み候補から除外する
+const filterableAreas = computed(() => zoo.value?.areas.filter((area) => !area.facility) ?? [])
+
 const searchText = ref('')
 const selectedAreaId = ref('')
 
@@ -65,7 +68,7 @@ function areaName(areaId) {
         <span class="filters__label">エリアで絞り込み</span>
         <select v-model="selectedAreaId" class="filters__select">
           <option value="">すべてのエリア</option>
-          <option v-for="area in zoo.areas" :key="area.id" :value="area.id">
+          <option v-for="area in filterableAreas" :key="area.id" :value="area.id">
             {{ area.name }}
           </option>
         </select>
