@@ -14,7 +14,10 @@ import { zoos } from '../data/zoos'
             {{ zoo.animals[0]?.emoji ?? '🏞️' }}
           </div>
           <div class="zoo-card__body">
-            <h2 class="zoo-card__name">{{ zoo.name }}</h2>
+            <h2 class="zoo-card__name">
+              {{ zoo.name }}
+              <span v-if="zoo.disclaimer" class="tag tag--real">実在の動物園(非公式マップ)</span>
+            </h2>
             <p class="zoo-card__desc">{{ zoo.description }}</p>
             <div class="zoo-card__meta">
               <span class="tag">エリア {{ zoo.areas.length }}</span>
@@ -75,9 +78,19 @@ import { zoos } from '../data/zoos'
 }
 
 .zoo-card__name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
   font-size: 1.05rem;
   font-weight: 700;
   margin-bottom: 0.3rem;
+}
+
+.tag--real {
+  background: #fde7c7;
+  color: #8a5a00;
+  font-weight: 700;
 }
 
 .zoo-card__desc {
