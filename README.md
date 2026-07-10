@@ -56,9 +56,10 @@ npm run preview
 ## GitHub Pages へのデプロイ
 
 `main` ブランチへ push すると、GitHub Actions ワークフロー(`.github/workflows/deploy.yml`)が
-`npm ci` → `npm run build` → GitHub Pages へのデプロイまで自動で行います。
+`npm ci` → `npm run build` → `gh-pages` ブランチへの push まで自動で行い、
+GitHub Pages(Source: `gh-pages` ブランチ)として公開されます。
 
-初回のみ、リポジトリの Settings → Pages で、Source を **GitHub Actions** に設定してください。
+公開 URL: https://trajanme.github.io/zoo-map/
 
 `vite.config.js` の `base` は、このリポジトリ名 `zoo-map` に合わせて `'/zoo-map/'` に設定済みです。
 別リポジトリ名で公開する場合は、`vite.config.js` の `base` を実際のリポジトリ名に書き換えてください。
