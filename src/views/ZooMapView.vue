@@ -1,13 +1,23 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getZoo } from '../data/zoos'
+import { getArea, getZoo } from '../data/zoos'
 
 // ポップアップの想定サイズ(px)。マップ枠の実測サイズをもとに、
 // はみ出さないようポップアップの表示位置を補正するために使う。
 const POPUP_WIDTH = 200
 const POPUP_HEIGHT = 100
 const POPUP_MARGIN = 10
+
+// パン・ズームの設定値
+const VIEW_W = 1000
+const VIEW_H = 700
+const MIN_SCALE = 1
+const MAX_SCALE = 8
+const FOCUS_SCALE = 3
+const DRAG_THRESHOLD = 8 // px (画面座標系)。これ未満の移動はタップ扱いにする
+const WHEEL_ZOOM_FACTOR = 1.2
+const BUTTON_ZOOM_FACTOR = 1.4
 
 const props = defineProps({
   zooId: { type: String, required: true },
@@ -23,14 +33,216 @@ const activeAnimalId = ref(
 )
 
 const mapWrapperRef = ref(null)
+const svgRef = ref(null)
 // アスペクト比 1000:700 を仮定したフォールバック値。実測後は ResizeObserver で更新する。
 const wrapperSize = reactive({ width: 343, height: 240 })
 let resizeObserver
+
+// --- パン・ズーム状態 ---
+const scale = ref(1)
+const panX = ref(0)
+const panY = ref(0)
+const isPointerActive = ref(false)
+
+const viewW = computed(() => VIEW_W / scale.value)
+const viewH = computed(() => VIEW_H / scale.value)
+const viewBoxAttr = computed(() => `${panX.value} ${panY.value} ${viewW.value} ${viewH.value}`)
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function clampPan(x, y, w, h) {
+  const maxX = Math.max(0, VIEW_W - w)
+  const maxY = Math.max(0, VIEW_H - h)
+  return { x: clamp(x, 0, maxX), y: clamp(y, 0, maxY) }
+}
+
+function panBy(dx, dy) {
+  const next = clampPan(panX.value + dx, panY.value + dy, viewW.value, viewH.value)
+  panX.value = next.x
+  panY.value = next.y
+}
+
+/** 画面座標(clientX/Y)を中心に据えたままズームする */
+function zoomAt(clientX, clientY, rect, targetScale) {
+  const newScale = clamp(targetScale, MIN_SCALE, MAX_SCALE)
+  if (newScale === scale.value) return
+  const relX = (clientX - rect.left) / rect.width
+  const relY = (clientY - rect.top) / rect.height
+  const pointX = panX.value + relX * viewW.value
+  const pointY = panY.value + relY * viewH.value
+  const newW = VIEW_W / newScale
+  const newH = VIEW_H / newScale
+  const newX = pointX - relX * newW
+  const newY = pointY - relY * newH
+  const clamped = clampPan(newX, newY, newW, newH)
+  scale.value = newScale
+  panX.value = clamped.x
+  panY.value = clamped.y
+}
+
+function zoomToAnimal(animalId, targetScale = FOCUS_SCALE) {
+  const animal = zoo.value?.animals.find((a) => a.id === animalId)
+  if (!animal) return
+  const newScale = clamp(targetScale, MIN_SCALE, MAX_SCALE)
+  const newW = VIEW_W / newScale
+  const newH = VIEW_H / newScale
+  const newX = animal.position.x - newW / 2
+  const newY = animal.position.y - newH / 2
+  const clamped = clampPan(newX, newY, newW, newH)
+  scale.value = newScale
+  panX.value = clamped.x
+  panY.value = clamped.y
+}
+
+function resetView() {
+  scale.value = 1
+  panX.value = 0
+  panY.value = 0
+}
+
+function zoomInButton() {
+  const rect = svgRef.value?.getBoundingClientRect()
+  if (!rect) return
+  zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, rect, scale.value * BUTTON_ZOOM_FACTOR)
+}
+
+function zoomOutButton() {
+  const rect = svgRef.value?.getBoundingClientRect()
+  if (!rect) return
+  zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, rect, scale.value / BUTTON_ZOOM_FACTOR)
+}
+
+function onWheel(e) {
+  e.preventDefault()
+  const rect = svgRef.value?.getBoundingClientRect()
+  if (!rect) return
+  const factor = e.deltaY < 0 ? WHEEL_ZOOM_FACTOR : 1 / WHEEL_ZOOM_FACTOR
+  zoomAt(e.clientX, e.clientY, rect, scale.value * factor)
+}
+
+// --- ポインター操作(ドラッグパン・ピンチズーム・タップ判別) ---
+const pointers = new Map() // pointerId -> {x, y} (client座標)
+let dragStartClient = null
+let wasDragging = false
+let gestureTargetAnimal = null
+let pinchPrev = null // { dist, mid }
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function midpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+/** capture フェーズで先に発火させ、子要素の pointerdown より前に状態をリセットする */
+function onPointerDownCapture(e) {
+  svgRef.value?.setPointerCapture(e.pointerId)
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  isPointerActive.value = true
+
+  if (pointers.size === 1) {
+    gestureTargetAnimal = null
+    wasDragging = false
+    dragStartClient = { x: e.clientX, y: e.clientY }
+  } else if (pointers.size === 2) {
+    const pts = [...pointers.values()]
+    pinchPrev = { dist: distance(pts[0], pts[1]), mid: midpoint(pts[0], pts[1]) }
+  }
+}
+
+/** ピンや獣舎区画をポインターダウンした時点で対象動物を記録する(bubble フェーズ) */
+function markGestureTarget(animal) {
+  gestureTargetAnimal = animal
+}
+
+function onPointerMove(e) {
+  if (!pointers.has(e.pointerId)) return
+  const prevPoint = pointers.get(e.pointerId)
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+  if (pointers.size >= 2) {
+    e.preventDefault()
+    const pts = [...pointers.values()].slice(0, 2)
+    const dist = distance(pts[0], pts[1])
+    const mid = midpoint(pts[0], pts[1])
+    const rect = svgRef.value?.getBoundingClientRect()
+    if (rect && pinchPrev) {
+      if (pinchPrev.dist > 0) {
+        const factor = dist / pinchPrev.dist
+        zoomAt(pinchPrev.mid.x, pinchPrev.mid.y, rect, scale.value * factor)
+      }
+      const dMidX = mid.x - pinchPrev.mid.x
+      const dMidY = mid.y - pinchPrev.mid.y
+      panBy((-dMidX / rect.width) * viewW.value, (-dMidY / rect.height) * viewH.value)
+    }
+    pinchPrev = { dist, mid }
+    wasDragging = true
+    return
+  }
+
+  if (pointers.size === 1) {
+    const cur = { x: e.clientX, y: e.clientY }
+    if (dragStartClient && distance(dragStartClient, cur) > DRAG_THRESHOLD) {
+      wasDragging = true
+    }
+    if (wasDragging) {
+      e.preventDefault()
+      const rect = svgRef.value?.getBoundingClientRect()
+      if (rect) {
+        const dx = cur.x - prevPoint.x
+        const dy = cur.y - prevPoint.y
+        panBy((-dx / rect.width) * viewW.value, (-dy / rect.height) * viewH.value)
+      }
+    }
+  }
+}
+
+function onPointerUp(e) {
+  if (!pointers.has(e.pointerId)) return
+  pointers.delete(e.pointerId)
+  if (pointers.size < 2) {
+    pinchPrev = null
+  }
+
+  if (pointers.size === 0) {
+    isPointerActive.value = false
+    dragStartClient = null
+    if (!wasDragging) {
+      if (gestureTargetAnimal) {
+        selectAnimal(gestureTargetAnimal)
+      } else {
+        closePopup()
+      }
+    }
+    wasDragging = false
+    gestureTargetAnimal = null
+  }
+
+  try {
+    svgRef.value?.releasePointerCapture(e.pointerId)
+  } catch {
+    // 既に解放済みの場合は無視する
+  }
+}
 
 watch(
   () => route.query.focus,
   (value) => {
     activeAnimalId.value = typeof value === 'string' ? value : null
+  },
+)
+
+watch(activeAnimalId, (id) => {
+  if (id) zoomToAnimal(id)
+})
+
+watch(
+  () => props.zooId,
+  () => {
+    resetView()
   },
 )
 
@@ -62,8 +274,8 @@ function areaLabel(area) {
 }
 
 /** ポリゴン頂点配列を SVG の points 属性文字列に変換する */
-function areaPointsAttr(area) {
-  return area.points.map((p) => `${p.x},${p.y}`).join(' ')
+function pointsAttr(points) {
+  return points.map((p) => `${p.x},${p.y}`).join(' ')
 }
 
 const LABEL_LINE_HEIGHT = 28
@@ -80,8 +292,50 @@ function areaLabelLineDy(area, index) {
   return -((lineCount - 1) * LABEL_LINE_HEIGHT) / 2
 }
 
+/** #rrggbb 形式の色を暗くする(獣舎区画をエリア色より一段濃く塗るため) */
+function darken(hex, amount = 0.22) {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex)
+  if (!match) return hex
+  const num = parseInt(match[1], 16)
+  const r = Math.round(((num >> 16) & 0xff) * (1 - amount))
+  const g = Math.round(((num >> 8) & 0xff) * (1 - amount))
+  const b = Math.round((num & 0xff) * (1 - amount))
+  return `rgb(${r}, ${g}, ${b})`
+}
+
+function enclosureFill(animal) {
+  const area = getArea(zoo.value, animal.areaId)
+  return darken(area?.color ?? '#cccccc')
+}
+
+/** 獣舎区画のラベル位置。rect は下端中央、points は重心を親エリア中心から外側へ少し押し出す */
+function enclosureLabelPos(animal) {
+  const enc = animal.enclosure
+  if (!enc) return null
+  if (enc.rect) {
+    return { x: enc.rect.x + enc.rect.w / 2, y: enc.rect.y + enc.rect.h - 10 }
+  }
+  if (enc.points && enc.points.length) {
+    const sum = enc.points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 })
+    const cx = sum.x / enc.points.length
+    const cy = sum.y / enc.points.length
+    const area = getArea(zoo.value, animal.areaId)
+    const areaCenter = area?.labelPos
+    if (areaCenter) {
+      const dx = cx - areaCenter.x
+      const dy = cy - areaCenter.y
+      const dist = Math.hypot(dx, dy) || 1
+      const push = 50
+      return { x: cx + (dx / dist) * push, y: cy + (dy / dist) * push }
+    }
+    return { x: cx, y: cy }
+  }
+  return null
+}
+
 onMounted(() => {
   if (activeAnimalId.value) {
+    zoomToAnimal(activeAnimalId.value)
     nextTick(() => {
       mapWrapperRef.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
@@ -122,8 +376,11 @@ const popupStyle = computed(() => {
   const width = wrapperSize.width || 343
   const height = wrapperSize.height || 240
 
-  const rawLeftPx = (activeAnimal.value.position.x / 1000) * width
-  const rawTopPx = (activeAnimal.value.position.y / 700) * height
+  // 現在の viewBox(パン・ズーム後)を基準に、ピン位置をラッパー内の px 座標へ変換する
+  const relX = (activeAnimal.value.position.x - panX.value) / viewW.value
+  const relY = (activeAnimal.value.position.y - panY.value) / viewH.value
+  const rawLeftPx = relX * width
+  const rawTopPx = relY * height
 
   const halfPopupWidth = POPUP_WIDTH / 2
   const clampedLeftPx = Math.min(
@@ -150,7 +407,9 @@ const popupStyle = computed(() => {
       <span>{{ zoo.name }}</span>
     </p>
     <h1 class="page-title">{{ zoo.name }} 園内マップ</h1>
-    <p class="page-lead">エリアの色分けと動物のピンをタップして、行きたい場所を探そう。</p>
+    <p class="page-lead">
+      エリアの色分けと動物のピンをタップして、行きたい場所を探そう。ドラッグで移動、ホイールやピンチ、＋/−ボタンで拡大縮小できます。
+    </p>
 
     <nav class="tabs">
       <router-link :to="`/zoos/${zoo.id}`" class="tabs__link--active">マップ</router-link>
@@ -159,18 +418,24 @@ const popupStyle = computed(() => {
 
     <div ref="mapWrapperRef" class="map-wrapper">
       <svg
+        ref="svgRef"
         class="zoo-svg"
-        viewBox="0 0 1000 700"
+        :class="{ 'zoo-svg--active': isPointerActive }"
+        :viewBox="viewBoxAttr"
         role="img"
         :aria-label="`${zoo.name}の園内マップ`"
-        @click="closePopup"
+        @pointerdown.capture="onPointerDownCapture"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="onPointerUp"
+        @wheel="onWheel"
       >
         <rect x="0" y="0" width="1000" height="700" class="map-bg" />
 
         <g v-for="area in zoo.areas" :key="area.id">
           <polygon
             v-if="area.points"
-            :points="areaPointsAttr(area)"
+            :points="pointsAttr(area.points)"
             :fill="area.color"
             class="area-shape"
             :class="{ 'area-shape--facility': area.facility }"
@@ -201,6 +466,33 @@ const popupStyle = computed(() => {
         </g>
 
         <g v-for="animal in zoo.animals" :key="animal.id">
+          <!-- 動物ごとの獣舎・展示場区画(エリア色より一段濃い塗り+縁取り) -->
+          <g v-if="animal.enclosure" @pointerdown="markGestureTarget(animal)">
+            <polygon
+              v-if="animal.enclosure.points"
+              :points="pointsAttr(animal.enclosure.points)"
+              :fill="enclosureFill(animal)"
+              class="enclosure-shape"
+            />
+            <rect
+              v-else-if="animal.enclosure.rect"
+              :x="animal.enclosure.rect.x"
+              :y="animal.enclosure.rect.y"
+              :width="animal.enclosure.rect.w"
+              :height="animal.enclosure.rect.h"
+              :fill="enclosureFill(animal)"
+              class="enclosure-shape"
+              rx="8"
+            />
+            <text
+              v-if="enclosureLabelPos(animal)"
+              :x="enclosureLabelPos(animal).x"
+              :y="enclosureLabelPos(animal).y"
+              text-anchor="middle"
+              class="enclosure-label"
+            >{{ animal.name }}</text>
+          </g>
+
           <circle
             v-if="activeAnimalId === animal.id"
             :cx="animal.position.x"
@@ -213,7 +505,7 @@ const popupStyle = computed(() => {
             :cy="animal.position.y"
             r="26"
             class="pin-hit"
-            @click.stop="selectAnimal(animal)"
+            @pointerdown="markGestureTarget(animal)"
           />
           <text
             :x="animal.position.x"
@@ -221,7 +513,7 @@ const popupStyle = computed(() => {
             text-anchor="middle"
             dominant-baseline="central"
             class="pin-emoji"
-            @click.stop="selectAnimal(animal)"
+            @pointerdown="markGestureTarget(animal)"
           >{{ animal.emoji }}</text>
         </g>
       </svg>
@@ -237,6 +529,14 @@ const popupStyle = computed(() => {
         >
           詳細を見る →
         </router-link>
+      </div>
+
+      <div class="map-controls" role="group" aria-label="マップの拡大縮小">
+        <button type="button" class="map-controls__btn" aria-label="拡大" @click="zoomInButton">＋</button>
+        <button type="button" class="map-controls__btn" aria-label="縮小" @click="zoomOutButton">−</button>
+        <button type="button" class="map-controls__btn map-controls__btn--reset" aria-label="表示をリセット" @click="resetView">
+          リセット
+        </button>
       </div>
     </div>
 
@@ -275,6 +575,13 @@ const popupStyle = computed(() => {
   width: 100%;
   aspect-ratio: 1000 / 700;
   background: #eef3ea;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.zoo-svg--active {
+  cursor: grabbing;
 }
 
 .map-bg {
@@ -305,6 +612,23 @@ const popupStyle = computed(() => {
   font-size: 22px;
   font-weight: 600;
   fill: #6b6b6b;
+}
+
+.enclosure-shape {
+  stroke: rgba(0, 0, 0, 0.32);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.enclosure-label {
+  font-size: 13px;
+  font-weight: 700;
+  fill: #2b2b2b;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .pin-hit {
@@ -379,6 +703,45 @@ const popupStyle = computed(() => {
 
 .map-popup__link:hover {
   text-decoration: underline;
+}
+
+.map-controls {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+}
+
+.map-controls__btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--color-text);
+  font-size: 1.15rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.map-controls__btn:active {
+  background: var(--color-bg);
+}
+
+.map-controls__btn--reset {
+  width: auto;
+  height: 32px;
+  border-radius: 16px;
+  padding: 0 0.7rem;
+  font-size: 0.7rem;
 }
 
 .map-legend {
