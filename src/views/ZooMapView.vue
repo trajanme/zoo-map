@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
 import { getZoo } from '../data/zoos'
@@ -8,6 +8,8 @@ import { getZoo } from '../data/zoos'
 const FOCUS_ZOOM = 18
 const TILE_URL = `${import.meta.env.BASE_URL}tiles/{z}/{x}/{y}.jpg`
 const ATTRIBUTION = '地理院タイル(国土地理院) | © OpenStreetMap contributors'
+// zoo.bounds をこの割合だけ広げた範囲を「園内」とみなす(§10: 少し外までは許容する)
+const ZOO_BOUNDS_PAD_RATIO = 0.15
 
 const props = defineProps({
   zooId: { type: String, required: true },
@@ -25,6 +27,207 @@ let map = null
 let resizeObserver = null
 /** @type {Map<string, L.Marker>} */
 const markersById = new Map()
+
+// --- §10 現在地表示 ---------------------------------------------------
+// 位置情報は端末内(このタブの JS 実行内)でのみ使用し、どこにも送信・保存しない。
+/** @type {number | null} watchPosition の ID */
+let watchId = null
+/** @type {L.CircleMarker | null} 現在地の青ドット */
+let locationMarker = null
+/** @type {L.Circle | null} 精度円 */
+let locationAccuracyCircle = null
+/** @type {HTMLButtonElement | null} 現在地ボタンの DOM(Leaflet コントロール内、Vue 管理外) */
+let locateBtnEl = null
+/** @type {HTMLElement | null} ステータス表示の DOM */
+let locateStatusEl = null
+
+/**
+ * 現在地機能の状態。
+ * status: 'idle'(未開始) | 'watching'(追従中) | 'denied'(許可拒否) | 'unsupported'(非対応) | 'error'(一時的な取得失敗)
+ */
+const geoState = reactive({
+  status: 'idle',
+  hasPosition: false,
+  inside: true,
+})
+
+/** zoo.bounds を少し広げた範囲(§10.1: 「少しのマージン」)で園内判定する */
+function isInsideZoo(latlng) {
+  const b = zoo.value?.bounds
+  if (!b) return false
+  const padded = L.latLngBounds([b.south, b.west], [b.north, b.east]).pad(ZOO_BOUNDS_PAD_RATIO)
+  return padded.contains(latlng)
+}
+
+function updateLocationLayers(latlng, accuracy) {
+  if (!map) return
+  if (!locationMarker) {
+    locationMarker = L.circleMarker(latlng, {
+      radius: 8,
+      weight: 2,
+      color: '#ffffff',
+      fillColor: '#1a73e8',
+      fillOpacity: 1,
+      interactive: false,
+    }).addTo(map)
+  } else {
+    locationMarker.setLatLng(latlng)
+  }
+
+  if (!locationAccuracyCircle) {
+    locationAccuracyCircle = L.circle(latlng, {
+      radius: accuracy,
+      weight: 1,
+      color: '#1a73e8',
+      fillColor: '#1a73e8',
+      fillOpacity: 0.15,
+      interactive: false,
+    }).addTo(map)
+  } else {
+    locationAccuracyCircle.setLatLng(latlng)
+    locationAccuracyCircle.setRadius(accuracy)
+  }
+}
+
+function removeLocationLayers() {
+  if (locationMarker) {
+    map?.removeLayer(locationMarker)
+    locationMarker = null
+  }
+  if (locationAccuracyCircle) {
+    map?.removeLayer(locationAccuracyCircle)
+    locationAccuracyCircle = null
+  }
+}
+
+function handlePosition(position) {
+  const latlng = L.latLng(position.coords.latitude, position.coords.longitude)
+  geoState.status = 'watching'
+  geoState.hasPosition = true
+  geoState.inside = isInsideZoo(latlng)
+
+  if (geoState.inside) {
+    updateLocationLayers(latlng, position.coords.accuracy ?? 30)
+  } else {
+    // 園外では壊れて見えないよう、マーカーは消してステータス表示のみで伝える(§10.1)
+    removeLocationLayers()
+  }
+}
+
+function handleGeoError(err) {
+  const isDenied = err?.code === 1 // GeolocationPositionError.PERMISSION_DENIED
+  if (isDenied && watchId != null) {
+    navigator.geolocation.clearWatch(watchId)
+    watchId = null
+  }
+  geoState.hasPosition = false
+  removeLocationLayers()
+  geoState.status = isDenied ? 'denied' : 'error'
+}
+
+function startWatchingLocation() {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    geoState.status = 'unsupported'
+    return
+  }
+  geoState.status = 'watching'
+  geoState.hasPosition = false
+  watchId = navigator.geolocation.watchPosition(handlePosition, handleGeoError, {
+    enableHighAccuracy: true,
+    maximumAge: 5000,
+    timeout: 20000,
+  })
+}
+
+function stopWatchingLocation() {
+  if (watchId != null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(watchId)
+  }
+  watchId = null
+  geoState.status = 'idle'
+  geoState.hasPosition = false
+  geoState.inside = true
+  removeLocationLayers()
+}
+
+/** 現在地ボタンタップ: 未開始なら許可要求(初回タップで初めて要求)、追従中なら園内時のみ再センタリング */
+function onLocateButtonClick() {
+  if (geoState.status === 'unsupported' || geoState.status === 'denied') return
+
+  if (geoState.status === 'watching') {
+    if (geoState.hasPosition && geoState.inside && locationMarker && map) {
+      map.setView(locationMarker.getLatLng(), map.getZoom())
+    }
+    return
+  }
+
+  // 'idle' または一時的な 'error' からの(再)開始。ここで初めて許可プロンプトが走る
+  startWatchingLocation()
+}
+
+/** ステータス表示内の「停止」操作: 追従解除 */
+function onLocateStopClick() {
+  stopWatchingLocation()
+}
+
+function renderLocateControl() {
+  if (!locateBtnEl || !locateStatusEl) return
+  const s = geoState.status
+
+  locateBtnEl.disabled = s === 'unsupported' || s === 'denied'
+  locateBtnEl.classList.toggle('locate-control__btn--active', s === 'watching' && geoState.hasPosition && geoState.inside)
+  locateBtnEl.title =
+    s === 'unsupported'
+      ? '現在地取得に対応していません'
+      : s === 'denied'
+        ? '位置情報の利用が許可されていません'
+        : s === 'watching'
+          ? '現在地に再センタリング'
+          : '現在地を表示'
+
+  let statusText = ''
+  let showStop = false
+  if (s === 'unsupported') {
+    statusText = '現在地取得に対応していません'
+  } else if (s === 'denied') {
+    statusText = '位置情報の利用が許可されていません'
+  } else if (s === 'error') {
+    statusText = '現在地を取得できませんでした'
+    showStop = true
+  } else if (s === 'watching') {
+    showStop = true
+    if (!geoState.hasPosition) {
+      statusText = '現在地を取得中…'
+    } else if (!geoState.inside) {
+      statusText = '園外のため非表示'
+    } else {
+      statusText = ''
+    }
+  }
+
+  locateStatusEl.innerHTML = ''
+  if (statusText) {
+    const textEl = document.createElement('span')
+    textEl.className = 'locate-control__status-text'
+    textEl.textContent = statusText
+    locateStatusEl.appendChild(textEl)
+  }
+  if (showStop) {
+    const stopBtn = document.createElement('button')
+    stopBtn.type = 'button'
+    stopBtn.className = 'locate-control__stop'
+    stopBtn.textContent = '停止'
+    L.DomEvent.on(stopBtn, 'click', (evt) => {
+      L.DomEvent.stopPropagation(evt)
+      onLocateStopClick()
+    })
+    locateStatusEl.appendChild(stopBtn)
+  }
+  locateStatusEl.hidden = !statusText && !showStop
+}
+
+watch(geoState, renderLocateControl, { deep: true })
+// -----------------------------------------------------------------------
 
 /** #rrggbb 形式の色を暗くする(獣舎区画をエリア色より一段濃く塗るため) */
 function darken(hex, amount = 0.22) {
@@ -88,6 +291,9 @@ function focusOnAnimal(animalId) {
 }
 
 function destroyMap() {
+  stopWatchingLocation()
+  locateBtnEl = null
+  locateStatusEl = null
   resizeObserver?.disconnect()
   resizeObserver = null
   markersById.clear()
@@ -144,6 +350,38 @@ function buildMap() {
     },
   })
   new ResetControl({ position: 'topright' }).addTo(map)
+
+  const LocateControl = L.Control.extend({
+    onAdd() {
+      const container = L.DomUtil.create('div', 'locate-control')
+      L.DomEvent.disableClickPropagation(container)
+      L.DomEvent.disableScrollPropagation(container)
+
+      const btn = L.DomUtil.create('button', 'locate-control__btn', container)
+      btn.type = 'button'
+      btn.setAttribute('aria-label', '現在地を表示')
+      btn.innerHTML = '📍'
+      L.DomEvent.on(btn, 'click', (evt) => {
+        L.DomEvent.stopPropagation(evt)
+        onLocateButtonClick()
+      })
+
+      const status = L.DomUtil.create('div', 'locate-control__status', container)
+      status.setAttribute('aria-live', 'polite')
+      status.hidden = true
+
+      locateBtnEl = btn
+      locateStatusEl = status
+      return container
+    },
+  })
+  new LocateControl({ position: 'bottomright' }).addTo(map)
+
+  // 位置情報 API の有無だけを確認する(ここでは許可を要求しない。要求はボタンタップ時のみ §10.1)
+  geoState.status = typeof navigator !== 'undefined' && navigator.geolocation ? 'idle' : 'unsupported'
+  geoState.hasPosition = false
+  geoState.inside = true
+  renderLocateControl()
 
   markersById.clear()
 
@@ -364,6 +602,74 @@ watch(
 
 .map-reset-btn:hover {
   background: #f4f4f4;
+}
+
+.locate-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.locate-control__btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  background: #fff;
+  border-radius: 4px;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+}
+
+.locate-control__btn:hover:not(:disabled) {
+  background: #f4f4f4;
+}
+
+.locate-control__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.locate-control__btn--active {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+}
+
+.locate-control__status {
+  max-width: 168px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: #444;
+}
+
+.locate-control__status-text {
+  flex: 1;
+}
+
+.locate-control__stop {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a5fb4;
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .area-label-icon,
