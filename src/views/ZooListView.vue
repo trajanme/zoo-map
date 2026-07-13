@@ -16,7 +16,7 @@ import { zoos } from '../data/zoos'
           <div class="zoo-card__body">
             <h2 class="zoo-card__name">
               {{ zoo.name }}
-              <span v-if="zoo.disclaimer" class="tag tag--real">実在の動物園(非公式マップ)</span>
+              <span class="tag tag--real">実在の動物園(非公式マップ)</span>
             </h2>
             <p class="zoo-card__desc">{{ zoo.description }}</p>
             <div class="zoo-card__meta">
