@@ -2,6 +2,13 @@ name: Download map tiles and OSM reference data
 
 on:
   workflow_dispatch:
+  # workflow_dispatch を API から起動する権限がない環境向け:
+  # このファイルまたはスクリプトの変更が main に入ったら実行する
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/download-tiles.mjs'
+      - '.github/workflows/download-tiles.yml'
 
 permissions:
   contents: write
