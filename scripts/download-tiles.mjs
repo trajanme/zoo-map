@@ -18,7 +18,8 @@ const DELAY_MS = 150
 // bbox: [south, west, north, east] 園域+約300mマージン
 const ZOOS = [
   { id: 'oji-zoo', bbox: [34.707, 135.2085, 34.715, 135.2175] },
-  { id: 'ueno-zoo', bbox: [35.7105, 139.7645, 35.7205, 139.7775] },
+  // refBbox: Overpass 用の狭い範囲(上野公園全体だとクエリが重く 504 になるため動物園本体に絞る)
+  { id: 'ueno-zoo', bbox: [35.7105, 139.7645, 35.7205, 139.7775], refBbox: [35.7125, 139.7685, 35.719, 139.775] },
   { id: 'yagiyama-zoo', bbox: [38.2385, 140.8365, 38.2495, 140.85] },
 ]
 
@@ -88,7 +89,7 @@ async function fetchOverpass(query, zooId) {
 async function downloadOsmRef() {
   let failed = 0
   for (const zoo of ZOOS) {
-    const [s, w, n, e] = zoo.bbox
+    const [s, w, n, e] = zoo.refBbox ?? zoo.bbox
     const bbox = `${s},${w},${n},${e}`
     const query = `[out:json][timeout:180];
 (
