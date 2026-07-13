@@ -8,7 +8,10 @@ import { dirname } from 'node:path'
 
 const USER_AGENT = 'zoo-map-tile-fetcher (https://github.com/trajanme/zoo-map)'
 const TILE_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto'
-const OVERPASS = 'https://overpass-api.de/api/interpreter'
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+]
 const ZOOMS = [14, 15, 16, 17, 18]
 const DELAY_MS = 150
 
@@ -62,11 +65,32 @@ async function downloadTiles() {
   console.log(`tiles: ${ok} downloaded, ${skip} skipped(existing), ${missing} missing(404)`)
 }
 
+async function fetchOverpass(query, zooId) {
+  // 504 等の一時エラーに備え、エンドポイントを替えながらリトライする
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const endpoint = OVERPASS_ENDPOINTS[attempt % OVERPASS_ENDPOINTS.length]
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+      })
+      if (res.ok) return await res.json()
+      console.warn(`overpass ${zooId} attempt ${attempt + 1} (${endpoint}): HTTP ${res.status}`)
+    } catch (err) {
+      console.warn(`overpass ${zooId} attempt ${attempt + 1} (${endpoint}): ${err.message}`)
+    }
+    await sleep(15000)
+  }
+  return null
+}
+
 async function downloadOsmRef() {
+  let failed = 0
   for (const zoo of ZOOS) {
     const [s, w, n, e] = zoo.bbox
     const bbox = `${s},${w},${n},${e}`
-    const query = `[out:json][timeout:90];
+    const query = `[out:json][timeout:180];
 (
   nwr["tourism"="zoo"](${bbox});
   nwr["zoo"](${bbox});
@@ -77,18 +101,23 @@ async function downloadOsmRef() {
   nwr["leisure"="park"](${bbox});
 );
 out geom;`
-    const res = await fetch(OVERPASS, {
-      method: 'POST',
-      headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-    })
-    if (!res.ok) throw new Error(`overpass ${zoo.id}: HTTP ${res.status}`)
-    const json = await res.json()
+    const dest = `data/osm-ref/${zoo.id}.json`
+    if (await exists(dest)) {
+      console.log(`osm-ref ${zoo.id}: exists, skip`)
+      continue
+    }
+    const json = await fetchOverpass(query, zoo.id)
+    if (!json) {
+      console.error(`osm-ref ${zoo.id}: FAILED after retries (継続します)`)
+      failed++
+      continue
+    }
     await mkdir('data/osm-ref', { recursive: true })
-    await writeFile(`data/osm-ref/${zoo.id}.json`, JSON.stringify(json))
+    await writeFile(dest, JSON.stringify(json))
     console.log(`osm-ref ${zoo.id}: ${json.elements?.length ?? 0} elements`)
-    await sleep(3000)
+    await sleep(5000)
   }
+  if (failed > 0) console.error(`osm-ref: ${failed} zoo(s) failed — 再実行してください`)
 }
 
 await downloadTiles()
