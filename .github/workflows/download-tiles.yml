@@ -36,8 +36,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Add bundled GSI map tiles and OSM reference data
-
-出典: 地理院タイル(国土地理院) / © OpenStreetMap contributors"
+            git commit -m "Add bundled GSI map tiles and OSM reference data" -m "出典: 地理院タイル(国土地理院) / © OpenStreetMap contributors"
             git push
           fi
