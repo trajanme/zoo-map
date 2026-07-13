@@ -1,0 +1,36 @@
+name: Download map tiles and OSM reference data
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download tiles and OSM data
+        run: node scripts/download-tiles.mjs
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/tiles data/osm-ref
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add bundled GSI map tiles and OSM reference data
+
+出典: 地理院タイル(国土地理院) / © OpenStreetMap contributors"
+            git push
+          fi
