@@ -6,10 +6,14 @@ import { getZoo } from '../data/zoos'
 
 // ?focus= 遷移時にズームするレベル(§9.3)
 const FOCUS_ZOOM = 18
+// flyTo のアニメーション時間(秒)。§11.2: focus 遷移も滑らかに
+const FLY_TO_DURATION = 1
 const TILE_URL = `${import.meta.env.BASE_URL}tiles/{z}/{x}/{y}.jpg`
 const ATTRIBUTION = '地理院タイル(国土地理院) | © OpenStreetMap contributors'
 // zoo.bounds をこの割合だけ広げた範囲を「園内」とみなす(§10: 少し外までは許容する)
 const ZOO_BOUNDS_PAD_RATIO = 0.15
+// これより低いズームレベルでは獣舎ラベルを非表示にし、DOM 負荷と見た目のごちゃつきを抑える(§11.2)
+const ENCLOSURE_LABEL_MIN_ZOOM = 17
 
 const props = defineProps({
   zooId: { type: String, required: true },
@@ -27,6 +31,11 @@ let map = null
 let resizeObserver = null
 /** @type {Map<string, L.Marker>} */
 const markersById = new Map()
+/** @type {L.LayerGroup | null} 獣舎ラベル(divIcon)をまとめ、ズームに応じて表示/非表示を切り替える(§11.2) */
+let enclosureLabelLayer = null
+
+// フェーズ6: マップ上のオーバーレイパネル(凡例・disclaimer)の折りたたみ状態。初期は折りたたみ(1行要約)
+const infoPanelExpanded = ref(false)
 
 // --- §10 現在地表示 ---------------------------------------------------
 // 位置情報は端末内(このタブの JS 実行内)でのみ使用し、どこにも送信・保存しない。
@@ -286,8 +295,20 @@ function clearFocusQuery(animalId) {
 function focusOnAnimal(animalId) {
   const marker = markersById.get(animalId)
   if (!marker || !map) return
-  map.flyTo(marker.getLatLng(), FOCUS_ZOOM)
+  map.flyTo(marker.getLatLng(), FOCUS_ZOOM, { duration: FLY_TO_DURATION })
   marker.openPopup()
+}
+
+/** ズームに応じて獣舎ラベル(divIcon)レイヤーの表示/非表示を切り替える(§11.2) */
+function updateEnclosureLabelsVisibility() {
+  if (!map || !enclosureLabelLayer) return
+  const shouldShow = map.getZoom() >= ENCLOSURE_LABEL_MIN_ZOOM
+  const isShown = map.hasLayer(enclosureLabelLayer)
+  if (shouldShow && !isShown) {
+    enclosureLabelLayer.addTo(map)
+  } else if (!shouldShow && isShown) {
+    map.removeLayer(enclosureLabelLayer)
+  }
 }
 
 function destroyMap() {
@@ -297,6 +318,7 @@ function destroyMap() {
   resizeObserver?.disconnect()
   resizeObserver = null
   markersById.clear()
+  enclosureLabelLayer = null
   if (map) {
     map.remove()
     map = null
@@ -321,6 +343,17 @@ function buildMap() {
     maxBounds: bounds,
     maxBoundsViscosity: 1,
     zoomControl: false,
+    // --- §11.2 操作の滑らかさ ---
+    preferCanvas: true, // エリア・獣舎ポリゴンを Canvas 描画にして負荷を下げる
+    zoomSnap: 0.25,
+    zoomDelta: 0.5,
+    wheelPxPerZoomLevel: 80,
+    wheelDebounceTime: 25,
+    inertia: true,
+    inertiaDeceleration: 2500,
+    zoomAnimation: true,
+    fadeAnimation: true,
+    touchZoom: true,
   }).setView([currentZoo.center.lat, currentZoo.center.lng], currentZoo.defaultZoom)
 
   L.control.zoom({ position: 'topright' }).addTo(map)
@@ -331,6 +364,10 @@ function buildMap() {
     maxNativeZoom: 18,
     maxZoom,
     attribution: ATTRIBUTION,
+    // §11.2: パン時にタイルの空白が目立たないよう周辺タイルを多めに保持し、常に最新表示を追従させる
+    keepBuffer: 4,
+    updateWhenIdle: false,
+    updateWhenZooming: false,
     errorTileUrl:
       'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7',
   }).addTo(map)
@@ -344,7 +381,9 @@ function buildMap() {
       btn.innerText = 'リセット'
       L.DomEvent.on(btn, 'click', (evt) => {
         L.DomEvent.stopPropagation(evt)
-        map.flyTo([currentZoo.center.lat, currentZoo.center.lng], currentZoo.defaultZoom)
+        map.flyTo([currentZoo.center.lat, currentZoo.center.lng], currentZoo.defaultZoom, {
+          duration: FLY_TO_DURATION,
+        })
       })
       return btn
     },
@@ -384,6 +423,7 @@ function buildMap() {
   renderLocateControl()
 
   markersById.clear()
+  enclosureLabelLayer = L.layerGroup()
 
   for (const area of currentZoo.areas) {
     const latlngs = area.points.map((p) => [p.lat, p.lng])
@@ -431,7 +471,7 @@ function buildMap() {
         }),
         interactive: false,
         keyboard: false,
-      }).addTo(map)
+      }).addTo(enclosureLabelLayer)
     }
 
     const marker = L.marker([animal.position.lat, animal.position.lng], {
@@ -448,6 +488,10 @@ function buildMap() {
     marker.on('popupclose', () => clearFocusQuery(animal.id))
     markersById.set(animal.id, marker)
   }
+
+  // §11.2: ズームに応じて獣舎ラベルの表示/非表示を切り替える(初期表示分も含めて反映)
+  map.on('zoomend', updateEnclosureLabelsVisibility)
+  updateEnclosureLabelsVisibility()
 
   if (typeof route.query.focus === 'string' && markersById.has(route.query.focus)) {
     const id = route.query.focus
@@ -482,36 +526,43 @@ watch(
 </script>
 
 <template>
-  <section v-if="zoo">
-    <p class="breadcrumb">
-      <router-link to="/">動物園一覧</router-link>
-      <span>›</span>
-      <span>{{ zoo.name }}</span>
-    </p>
-    <h1 class="page-title">{{ zoo.name }} 園内マップ</h1>
-    <p class="page-lead">
-      エリアの色分けと動物のピンをタップして、行きたい場所を探そう。ドラッグで移動、ホイールやピンチ、地図右上の＋/−ボタンで拡大縮小できます。
-    </p>
+  <section v-if="zoo" class="map-screen">
+    <div ref="mapContainerRef" class="zoo-leaflet-map" role="img" :aria-label="`${zoo.name}の園内マップ`"></div>
 
-    <nav class="tabs">
-      <router-link :to="`/zoos/${zoo.id}`" class="tabs__link--active">マップ</router-link>
-      <router-link :to="`/zoos/${zoo.id}/animals`">動物一覧・検索</router-link>
-    </nav>
-
-    <div class="map-wrapper">
-      <div ref="mapContainerRef" class="zoo-leaflet-map" role="img" :aria-label="`${zoo.name}の園内マップ`"></div>
+    <!-- フェーズ6: 「戻る」「動物一覧」はマップ上のフローティングボタンにする(§11.1) -->
+    <div class="map-nav-overlay">
+      <router-link to="/" class="map-float-btn" aria-label="動物園一覧に戻る">
+        <span aria-hidden="true">←</span> 戻る
+      </router-link>
+      <router-link :to="`/zoos/${zoo.id}/animals`" class="map-float-btn">
+        <span aria-hidden="true">📋</span> 動物一覧
+      </router-link>
     </div>
 
-    <div class="map-legend">
-      <span v-for="area in zoo.areas" :key="area.id" class="map-legend__item">
-        <span class="map-legend__swatch" :style="{ background: area.color }"></span>
-        {{ area.name }}
-      </span>
+    <!-- フェーズ6: 凡例・disclaimer は折りたたみ可能なオーバーレイパネルにする(§11.1) -->
+    <div class="map-info-panel" :class="{ 'map-info-panel--expanded': infoPanelExpanded }">
+      <button
+        type="button"
+        class="map-info-panel__toggle"
+        :aria-expanded="infoPanelExpanded"
+        @click="infoPanelExpanded = !infoPanelExpanded"
+      >
+        <span class="map-info-panel__zoo-name">{{ zoo.name }}</span>
+        <span v-if="!infoPanelExpanded && zoo.disclaimer" class="map-info-panel__summary">{{ zoo.disclaimer }}</span>
+        <span class="map-info-panel__chevron" aria-hidden="true">{{ infoPanelExpanded ? '▾' : '▸' }}</span>
+      </button>
+      <div v-show="infoPanelExpanded" class="map-info-panel__body">
+        <p v-if="zoo.disclaimer" class="map-disclaimer">
+          <span aria-hidden="true">ⓘ</span> {{ zoo.disclaimer }}
+        </p>
+        <div class="map-legend">
+          <span v-for="area in zoo.areas" :key="area.id" class="map-legend__item">
+            <span class="map-legend__swatch" :style="{ background: area.color }"></span>
+            {{ area.name }}
+          </span>
+        </div>
+      </div>
     </div>
-
-    <p v-if="zoo.disclaimer" class="map-disclaimer">
-      <span aria-hidden="true">ⓘ</span> {{ zoo.disclaimer }}
-    </p>
   </section>
   <section v-else class="empty-state">
     <p>指定された動物園が見つかりませんでした。</p>
@@ -520,32 +571,124 @@ watch(
 </template>
 
 <style scoped>
-.map-wrapper {
-  position: relative;
-  z-index: 0;
-  width: 100%;
-  max-width: 720px;
-  margin: 0 auto;
-  border-radius: var(--radius-lg);
+/* フェーズ6: マップ画面はビューポートほぼ全面に表示する(§11.1)。100dvh 未対応環境向けに 100vh をフォールバックとして先に指定する */
+.map-screen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--color-border);
   background: #d9d9d9;
 }
 
 .zoo-leaflet-map {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  height: 100%;
   background: #d9d9d9;
+}
+
+.map-nav-overlay {
+  position: absolute;
+  top: calc(0.6rem + env(safe-area-inset-top, 0px));
+  left: calc(0.6rem + env(safe-area-inset-left, 0px));
+  /* Leaflet の corner コンテナ(.leaflet-top/.leaflet-bottom)は z-index:1000 のため、それより上にする */
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.map-float-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--color-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.map-float-btn:active {
+  transform: scale(0.97);
+}
+
+.map-info-panel {
+  position: absolute;
+  left: calc(0.6rem + env(safe-area-inset-left, 0px));
+  bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  /* Leaflet の corner コンテナ(.leaflet-top/.leaflet-bottom)は z-index:1000 のため、それより上にする */
+  z-index: 1200;
+  width: min(340px, calc(100vw - 1.2rem));
+  max-height: calc(60vh - env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.map-info-panel__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.map-info-panel__zoo-name {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--color-primary-dark);
+}
+
+.map-info-panel__summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.map-info-panel__chevron {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.map-info-panel__body {
+  padding: 0 0.75rem 0.7rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--color-border);
 }
 
 .map-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  justify-content: center;
-  margin-top: 1rem;
-  font-size: 0.8rem;
+  gap: 0.4rem 0.7rem;
+  margin-top: 0.6rem;
+  font-size: 0.74rem;
   color: var(--color-text-muted);
 }
 
@@ -564,14 +707,13 @@ watch(
 }
 
 .map-disclaimer {
-  max-width: 720px;
-  margin: 1rem auto 0;
-  padding: 0.65rem 0.9rem;
+  margin: 0.6rem 0 0;
+  padding: 0.6rem 0.75rem;
   border-radius: var(--radius-md);
   background: #fff8e6;
   border: 1px solid #f0dfa8;
   color: #7a6415;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   line-height: 1.5;
 }
 </style>

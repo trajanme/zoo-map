@@ -16,6 +16,8 @@ const routes = [
     name: 'zoo-map',
     component: ZooMapView,
     props: true,
+    // フェーズ6: マップ画面は全画面表示にするため、共通ヘッダー/フッターを隠す目印
+    meta: { fullscreenMap: true },
   },
   {
     path: '/zoos/:zooId/animals',
