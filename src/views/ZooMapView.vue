@@ -443,6 +443,42 @@ function buildMap() {
   geoState.inside = true
   renderLocateControl()
 
+  // §13: 園外グレーアウト。外側リング(bounds を大きく超える矩形)+穴=園境界(boundary /
+  // boundaryExtra)の複合ポリゴンを重ね、園外を白系の半透明で減光する。マスクは
+  // interactive: false にしてタップ・パン・ズームを一切妨げない。preferCanvas 環境では
+  // 同一キャンバス内の描画順序が addTo(map) の呼び出し順に一致するため、エリア・獣舎
+  // ポリゴンより先に追加することで「タイルの上・エリアの下」の重なりを実現する
+  if (currentZoo.boundary?.length) {
+    const outerBounds = bounds.pad(1)
+    const outerRing = [
+      [outerBounds.getSouth(), outerBounds.getWest()],
+      [outerBounds.getNorth(), outerBounds.getWest()],
+      [outerBounds.getNorth(), outerBounds.getEast()],
+      [outerBounds.getSouth(), outerBounds.getEast()],
+    ]
+    const boundaryHoles = [
+      currentZoo.boundary.map((p) => [p.lat, p.lng]),
+      ...(currentZoo.boundaryExtra ?? []).map((ring) => ring.map((p) => [p.lat, p.lng])),
+    ]
+
+    L.polygon([outerRing, ...boundaryHoles], {
+      stroke: false,
+      fillColor: '#f4f3ef',
+      fillOpacity: 0.68,
+      interactive: false,
+    }).addTo(map)
+
+    // 園境界(飛び地含む)には細い境界線を別途描き、園域が分かるようにする
+    for (const ring of boundaryHoles) {
+      L.polygon(ring, {
+        fill: false,
+        color: 'rgba(40, 40, 40, 0.55)',
+        weight: 1.5,
+        interactive: false,
+      }).addTo(map)
+    }
+  }
+
   markersById.clear()
   enclosureLabelLayer = L.layerGroup()
 
