@@ -334,13 +334,15 @@ function buildMap() {
     [currentZoo.bounds.south, currentZoo.bounds.west],
     [currentZoo.bounds.north, currentZoo.bounds.east],
   )
-  const minZoom = currentZoo.minZoom ?? 15
   const maxZoom = currentZoo.maxZoom ?? 19
+  // 同梱タイルの最小ズーム(§9.3)。マップの下限ズームは §12 により動的に算出するため、
+  // タイルレイヤー側は取得済みタイルが揃っている範囲を素直に下限として指定するだけでよい
+  const TILE_MIN_ZOOM = 14
 
   map = L.map(mapContainerRef.value, {
-    minZoom,
     maxZoom,
     maxBounds: bounds,
+    // §12: 境界外へのゴム引っ張りをなくし、境界でぴたりと止まるようにする
     maxBoundsViscosity: 1,
     zoomControl: false,
     // --- §11.2 操作の滑らかさ ---
@@ -354,13 +356,33 @@ function buildMap() {
     zoomAnimation: true,
     fadeAnimation: true,
     touchZoom: true,
-  }).setView([currentZoo.center.lat, currentZoo.center.lng], currentZoo.defaultZoom)
+  })
+
+  // §12: 初期表示は園全体(bounds)が収まるビューにする
+  map.fitBounds(bounds)
+
+  // §12: ズームアウトの下限は「園全体が画面に収まるズーム」までとし、固定値ではなく
+  // map.getBoundsZoom(bounds) で動的に算出する。画面のリサイズ・回転時にも再計算する
+  function updateMinZoom() {
+    if (!map) return
+    // getBoundsZoom() は現在の minZoom を下限としてクランプして返すため、
+    // 一旦下限を外してから再計算しないと、リサイズで下限を「下げる」方向の再計算ができない
+    map.setMinZoom(0)
+    const boundsZoom = map.getBoundsZoom(bounds)
+    map.setMinZoom(boundsZoom)
+    // setMinZoom は内部でも現在ズームが下限未満なら引き上げるが、意図を明確にするため明示しておく
+    if (map.getZoom() < boundsZoom) {
+      map.setZoom(boundsZoom)
+    }
+  }
+  updateMinZoom()
+  map.on('resize', updateMinZoom)
 
   L.control.zoom({ position: 'topright' }).addTo(map)
 
   // タイル未取得(404)でもエラーにせず、コンテナのグレー背景がそのまま透けるようにする
   L.tileLayer(TILE_URL, {
-    minZoom,
+    minZoom: TILE_MIN_ZOOM,
     maxNativeZoom: 18,
     maxZoom,
     attribution: ATTRIBUTION,
@@ -381,9 +403,8 @@ function buildMap() {
       btn.innerText = 'リセット'
       L.DomEvent.on(btn, 'click', (evt) => {
         L.DomEvent.stopPropagation(evt)
-        map.flyTo([currentZoo.center.lat, currentZoo.center.lng], currentZoo.defaultZoom, {
-          duration: FLY_TO_DURATION,
-        })
+        // §12: リセットも fitBounds ベース(園全体が収まるビュー)に揃える
+        map.flyToBounds(bounds, { duration: FLY_TO_DURATION })
       })
       return btn
     },

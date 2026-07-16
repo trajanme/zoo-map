@@ -65,10 +65,9 @@
  * @property {string} name
  * @property {string} description
  * @property {LatLng} center       初期表示の中心座標
- * @property {number} defaultZoom  初期表示のズームレベル
- * @property {number} [minZoom]
+ * @property {number} defaultZoom  初期表示のズームレベル(現在は未使用。初期表示は bounds への fitBounds)
  * @property {number} [maxZoom]
- * @property {ZooBounds} bounds    パン制限(この範囲外へは大きく出られない)
+ * @property {ZooBounds} bounds    パン制限(園境界+50〜100m 程度。ズームアウト下限もここから動的算出する。§12)
  * @property {Area[]} areas
  * @property {Animal[]} animals
  * @property {string} [disclaimer] 非公式マップである旨などの注意書き。マップ画面に表示する
@@ -211,9 +210,9 @@ export const zoos = [
       '最新情報は王子動物園の公式サイトをご確認ください。',
     center: { lat: 34.71077, lng: 135.21412 },
     defaultZoom: 16,
-    minZoom: 15,
     maxZoom: 19,
-    bounds: { south: 34.707, west: 135.2085, north: 34.715, east: 135.2175 },
+    // §12: 園境界(tourism=zoo, data/osm-ref/oji-zoo.json)+80m 程度に締めたパン制限
+    bounds: { south: 34.708252, west: 135.211197, north: 34.713287, east: 135.217046 },
     areas: [
       {
         id: 'gate-flamingo',
@@ -768,9 +767,9 @@ export const zoos = [
       '最新情報は恩賜上野動物園の公式サイトをご確認ください。',
     center: { lat: 35.71533, lng: 139.77054 },
     defaultZoom: 16,
-    minZoom: 15,
     maxZoom: 19,
-    bounds: { south: 35.7105, west: 139.7645, north: 35.7205, east: 139.7775 },
+    // §12: 園境界(tourism=zoo, data/osm-ref/ueno-zoo.json)+80m 程度に締めたパン制限
+    bounds: { south: 35.711691, west: 139.76701, north: 35.718961, east: 139.774076 },
     areas: [
       {
         id: 'east-garden',
@@ -822,13 +821,15 @@ export const zoos = [
         name: '不忍池',
         color: '#cfe8f3',
         facility: true,
+        // §12: zoo.bounds を園境界+80m程度に締めたことに伴い、パン制限範囲内に収まるよう
+        // 西園に隣接する範囲(池の全域ではなく縁)に合わせて調整
         points: [
-          { lat: 35.7104, lng: 139.7688 },
+          { lat: 35.712, lng: 139.7688 },
           { lat: 35.7131, lng: 139.7688 },
           { lat: 35.7131, lng: 139.7706 },
-          { lat: 35.7104, lng: 139.7706 },
+          { lat: 35.712, lng: 139.7706 },
         ],
-        labelPos: { lat: 35.7117, lng: 139.7697 },
+        labelPos: { lat: 35.71255, lng: 139.7697 },
       },
     ],
     animals: [
@@ -1372,9 +1373,9 @@ export const zoos = [
       '最新情報は八木山動物公園フジサキの杜の公式サイトをご確認ください。',
     center: { lat: 38.2457, lng: 140.84493 },
     defaultZoom: 16,
-    minZoom: 15,
     maxZoom: 19,
-    bounds: { south: 38.2385, west: 140.8365, north: 38.2495, east: 140.85 },
+    // §12: 園境界(tourism=zoo, data/osm-ref/yagiyama-zoo.json)+80m 程度に締めたパン制限
+    bounds: { south: 38.24284, west: 140.84107, north: 38.248556, east: 140.848797 },
     areas: [
       {
         id: 'africa-area',
